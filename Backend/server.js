@@ -16,7 +16,7 @@ const startServer = async () => {
 
     server = app.listen(PORT, () => {
       console.log(`🚀 SmartPOS server running on port ${PORT}`);
-      console.log(`🌐 API URL: http://localhost:${PORT}/api`);
+      console.log(`🌐 API URL: http://localhost:${PORT}/api/health`);
       console.log(`📦 Environment: ${process.env.NODE_ENV || "development"}`);
     });
   } catch (error) {

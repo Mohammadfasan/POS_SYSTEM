@@ -19,41 +19,825 @@ enum UserStatus {
   SUSPENDED
 }
 
+enum BranchStatus {
+  ACTIVE
+  INACTIVE
+}
+
 model User {
-  id                   String      @id @default(uuid())
-  employeeId           String      @unique
-  firstName            String
-  lastName             String
-  email                String      @unique
-  passwordHash         String
-  role                 Role        @default(CASHIER)
-  status               UserStatus  @default(ACTIVE)
+  id           String     @id @default(uuid())
+  employeeId   String     @unique
+  firstName    String
+  lastName     String
+  email        String     @unique
+  passwordHash String
+  role         Role       @default(CASHIER)
+  status       UserStatus @default(ACTIVE)
 
-  failedLoginAttempts  Int         @default(0)
-  lockedUntil          DateTime?
-  lastLoginAt          DateTime?
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
 
-  refreshTokens        RefreshToken[]
+  // Branch relation
+  branchId  String?
+  branch    Branch?    @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  heldBills HeldBill[] @relation("HeldBillCashier")
 
-  createdAt            DateTime    @default(now())
-  updatedAt            DateTime    @updatedAt
+  refreshTokens RefreshToken[]
 
-  @@index([email])
-  @@index([employeeId])
+  returnsRequested SaleReturn[] @relation("ReturnRequestedBy")
+
+  returnsApproved SaleReturn[] @relation("ReturnApprovedBy")
+
+  returnsRejected SaleReturn[] @relation("ReturnRejectedBy")
+
+  returnsCancelled SaleReturn[] @relation("ReturnCancelledBy")
+
+  returnsCompleted SaleReturn[] @relation("ReturnCompletedBy")
+
+  refundsProcessed              Refund[]                @relation("RefundProcessedBy")
+  paymentsProcessed             Payment[]               @relation("PaymentCashier")
+  salesAsCashier                Sale[]                  @relation("SaleCashier")
+  cashDrawerTransactionsCreated CashDrawerTransaction[] @relation("CashDrawerTransactionCreatedBy")
+  cashierShifts                 CashierShift[]          @relation("CashierShifts")
+  closedShifts                  CashierShift[]          @relation("ShiftClosedBy")
+  stockMovementsCreated         StockMovement[]         @relation("StockMovementCreatedBy")
+  createdAt                     DateTime                @default(now())
+  updatedAt                     DateTime                @updatedAt
+
   @@index([role])
   @@index([status])
+  @@index([branchId])
 }
 
 model RefreshToken {
-  id          String    @id @default(uuid())
-  tokenHash   String    @unique
-  userId      String
-  expiresAt   DateTime
-  revokedAt   DateTime?
-  createdAt   DateTime  @default(now())
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
 
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+model Branch {
+  id      String       @id @default(uuid())
+  code    String       @unique
+  name    String
+  phone   String?
+  email   String?
+  address String?
+  city    String?
+  status  BranchStatus @default(ACTIVE)
+
+  users       User[]
+  terminals   Terminal[]
+  inventories Inventory[]
+  shifts      CashierShift[]
+  sales       Sale[]
+  heldBills   HeldBill[]
+  saleReturns SaleReturn[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([name])
+}
+
+enum TerminalStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+}
+
+model Terminal {
+  id       String         @id @default(uuid())
+  code     String
+  name     String
+  location String?
+  status   TerminalStatus @default(ACTIVE)
+
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  sales      Sale[]
+  shifts     CashierShift[]
+  heldBills  HeldBill[]
+  cashDrawer CashDrawer?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([branchId, code])
+  @@index([branchId])
+  @@index([status])
+}
+
+enum CategoryStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum UnitStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum MeasurementType {
+  COUNT
+  WEIGHT
+  VOLUME
+  LENGTH
+}
+
+model Category {
+  id          String         @id @default(uuid())
+  code        String         @unique
+  name        String         @unique
+  description String?
+  status      CategoryStatus @default(ACTIVE)
+
+  products Product[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([name])
+}
+
+model Unit {
+  id               String          @id @default(uuid())
+  code             String          @unique
+  name             String          @unique
+  symbol           String
+  measurementType  MeasurementType
+  conversionFactor Decimal         @db.Decimal(18, 6)
+  isBase           Boolean         @default(false)
+  status           UnitStatus      @default(ACTIVE)
+
+  heldBillItems   HeldBillItem[] @relation("HeldBillUnit")
+  baseProducts    Product[]      @relation("ProductBaseUnit")
+  sellingProducts Product[]      @relation("ProductSellingUnit")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([measurementType])
+  @@index([status])
+}
+
+enum ProductType {
+  FIXED
+  WEIGHT
+  VOLUME
+  LENGTH
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  DISCONTINUED
+}
+
+model Product {
+  id String @id @default(uuid())
+
+  sku     String  @unique
+  barcode String? @unique
+
+  name        String
+  description String?
+  brand       String?
+  imageUrl    String?
+  inventories Inventory[]
+  saleItems   SaleItem[]
+  returnItems ReturnItem[]
+
+  productType ProductType
+  status      ProductStatus @default(ACTIVE)
+
+  costPrice    Decimal @db.Decimal(12, 2)
+  sellingPrice Decimal @db.Decimal(12, 2)
+
+  taxRate      Decimal @default(0) @db.Decimal(5, 2)
+  reorderLevel Decimal @default(0) @db.Decimal(18, 3)
+
+  allowFractionalQuantity Boolean @default(false)
+  trackInventory          Boolean @default(true)
+
+  heldBillItems HeldBillItem[] @relation("HeldBillProduct")
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  baseUnitId String
+  baseUnit   Unit   @relation("ProductBaseUnit", fields: [baseUnitId], references: [id], onDelete: Restrict)
+
+  sellingUnitId String
+  sellingUnit   Unit   @relation("ProductSellingUnit", fields: [sellingUnitId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+  @@index([categoryId])
+  @@index([productType])
+  @@index([status])
+}
+
+enum StockMovementType {
+  OPENING_STOCK
+
+  PURCHASE
+  SALE
+  RETURN
+  VOID
+
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+
+  TRANSFER_IN
+  TRANSFER_OUT
+
+  DAMAGED
+  EXPIRED
+}
+
+model Inventory {
+  id String @id @default(uuid())
+
+  quantity         Decimal @default(0) @db.Decimal(18, 3)
+  reservedQuantity Decimal @default(0) @db.Decimal(18, 3)
+  damagedQuantity  Decimal @default(0) @db.Decimal(18, 3)
+
+  branchId  String
+  productId String
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  movements StockMovement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([branchId, productId])
+  @@index([branchId])
+  @@index([productId])
+}
+
+model StockMovement {
+  id String @id @default(uuid())
+
+  movementType StockMovementType
+
+  quantity Decimal @db.Decimal(18, 3)
+
+  quantityBefore Decimal @db.Decimal(18, 3)
+  quantityAfter  Decimal @db.Decimal(18, 3)
+
+  reason String?
+
+  referenceType String?
+  referenceId   String?
+
+  inventoryId String
+  createdById String
+
+  inventory Inventory @relation(fields: [inventoryId], references: [id], onDelete: Restrict)
+
+  createdBy User @relation("StockMovementCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([inventoryId])
+  @@index([movementType])
+  @@index([createdById])
+  @@index([createdAt])
+}
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
+}
+
+model CashierShift {
+  id          String @id @default(uuid())
+  shiftNumber String @unique
+
+  cashierId  String
+  branchId   String
+  terminalId String
+  sales      Sale[]
+  payments   Payment[]
+  heldBills  HeldBill[]
+  refunds    Refund[]
+
+  status ShiftStatus @default(OPEN)
+
+  openedAt DateTime  @default(now())
+  closedAt DateTime?
+
+  openingCash Decimal @db.Decimal(14, 2)
+
+  cashSales   Decimal @default(0) @db.Decimal(14, 2)
+  cashRefunds Decimal @default(0) @db.Decimal(14, 2)
+  cashIn      Decimal @default(0) @db.Decimal(14, 2)
+  cashOut     Decimal @default(0) @db.Decimal(14, 2)
+
+  expectedCash Decimal @default(0) @db.Decimal(14, 2)
+
+  closingCash    Decimal? @db.Decimal(14, 2)
+  cashDifference Decimal? @db.Decimal(14, 2)
+
+  openingNote String?
+  closingNote String?
+
+  closedById String?
+
+  // Used to guarantee only one active shift
+  // per cashier and per terminal.
+  activeCashierKey  String? @unique
+  activeTerminalKey String? @unique
+
+  drawerTransactions CashDrawerTransaction[]
+
+  cashier User @relation("CashierShifts", fields: [cashierId], references: [id], onDelete: Restrict)
+
+  closedBy User? @relation("ShiftClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  terminal Terminal @relation(fields: [terminalId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([cashierId])
+  @@index([branchId])
+  @@index([terminalId])
+  @@index([status])
+  @@index([openedAt])
+}
+
+enum CashDrawerStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+}
+
+enum CashDrawerTransactionType {
+  CASH_IN
+  CASH_OUT
+  SALE
+  REFUND
+}
+
+model CashDrawer {
+  id     String           @id @default(uuid())
+  code   String           @unique
+  name   String
+  status CashDrawerStatus @default(ACTIVE)
+
+  terminalId String   @unique
+  terminal   Terminal @relation(fields: [terminalId], references: [id], onDelete: Restrict)
+
+  transactions CashDrawerTransaction[]
+  payments     Payment[]
+  refunds      Refund[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+model CashDrawerTransaction {
+  id String @id @default(uuid())
+
+  type   CashDrawerTransactionType
+  amount Decimal                   @db.Decimal(14, 2)
+
+  balanceBefore Decimal @db.Decimal(14, 2)
+  balanceAfter  Decimal @db.Decimal(14, 2)
+
+  reason String?
+
+  referenceType String?
+  referenceId   String?
+
+  drawerId    String
+  shiftId     String
+  createdById String
+
+  drawer    CashDrawer   @relation(fields: [drawerId], references: [id], onDelete: Restrict)
+  shift     CashierShift @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  createdBy User         @relation("CashDrawerTransactionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([drawerId])
+  @@index([shiftId])
+  @@index([createdById])
+  @@index([type])
+  @@index([createdAt])
+}
+
+enum SaleStatus {
+  PENDING_PAYMENT
+  PARTIALLY_PAID
+  COMPLETED
+  CANCELLED
+  VOIDED
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
+
+model Sale {
+  id String @id @default(uuid())
+
+  saleNumber    String  @unique
+  invoiceNumber String? @unique
+
+  status SaleStatus @default(PENDING_PAYMENT)
+
+  sourceHeldBillId String? @unique
+
+  sourceHeldBill HeldBill? @relation("HeldBillSourceSale", fields: [sourceHeldBillId], references: [id], onDelete: SetNull)
+
+  subtotal       Decimal @default(0) @db.Decimal(14, 2)
+  discountAmount Decimal @default(0) @db.Decimal(14, 2)
+  taxAmount      Decimal @default(0) @db.Decimal(14, 2)
+  grandTotal     Decimal @default(0) @db.Decimal(14, 2)
+
+  branchId   String
+  terminalId String
+  shiftId    String
+  cashierId  String
+
+  branch   Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  terminal Terminal     @relation(fields: [terminalId], references: [id], onDelete: Restrict)
+  shift    CashierShift @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  cashier  User         @relation("SaleCashier", fields: [cashierId], references: [id], onDelete: Restrict)
+
+  items    SaleItem[]
+  payments Payment[]
+  returns  SaleReturn[]
+
+  expiresAt    DateTime?
+  completedAt  DateTime?
+  cancelledAt  DateTime?
+  cancelReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId])
+  @@index([terminalId])
+  @@index([shiftId])
+  @@index([cashierId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model SaleItem {
+  id     String @id @default(uuid())
+  saleId String
+
+  productId   String
+  productName String
+  sku         String
+  barcode     String?
+
+  returnItems ReturnItem[]
+
+  quantity Decimal @db.Decimal(18, 3)
+
+  selectedUnitId     String
+  selectedUnitCode   String
+  selectedUnitSymbol String
+  selectedUnitFactor Decimal @db.Decimal(18, 6)
+
+  baseQuantity Decimal @db.Decimal(18, 3)
+
+  sellingUnitPrice  Decimal @db.Decimal(12, 2)
+  sellingUnitFactor Decimal @db.Decimal(18, 6)
+
+  lineSubtotal   Decimal @db.Decimal(14, 2)
+  discountAmount Decimal @default(0) @db.Decimal(14, 2)
+  taxRate        Decimal @default(0) @db.Decimal(5, 2)
+  taxAmount      Decimal @default(0) @db.Decimal(14, 2)
+  lineTotal      Decimal @db.Decimal(14, 2)
+
+  trackInventory Boolean @default(true)
+
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([saleId])
+  @@index([productId])
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  QR
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model Payment {
+  id String @id @default(uuid())
+
+  paymentNumber  String @unique
+  idempotencyKey String @unique
+
+  refunds Refund[]
+
+  method PaymentMethod
+  status PaymentStatus @default(COMPLETED)
+
+  amount Decimal @db.Decimal(14, 2)
+
+  // Mainly for CASH
+  tenderedAmount Decimal? @db.Decimal(14, 2)
+  changeAmount   Decimal? @db.Decimal(14, 2)
+
+  transactionReference String?
+  note                 String?
+
+  saleId    String
+  shiftId   String
+  cashierId String
+
+  // Only populated for CASH
+  drawerId String?
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Restrict)
+
+  shift CashierShift @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+
+  cashier User @relation("PaymentCashier", fields: [cashierId], references: [id], onDelete: Restrict)
+
+  drawer CashDrawer? @relation(fields: [drawerId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([saleId])
+  @@index([shiftId])
+  @@index([cashierId])
+  @@index([method])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum HeldBillStatus {
+  HELD
+  RESUMING
+  RESUMED
+  CANCELLED
+  EXPIRED
+}
+
+model HeldBill {
+  id         String         @id @default(uuid())
+  holdNumber String         @unique
+  status     HeldBillStatus @default(HELD)
+
+  note String?
+
+  branchId   String
+  terminalId String
+  shiftId    String
+  cashierId  String
+
+  branch   Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  terminal Terminal     @relation(fields: [terminalId], references: [id], onDelete: Restrict)
+  shift    CashierShift @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+
+  cashier User @relation("HeldBillCashier", fields: [cashierId], references: [id], onDelete: Restrict)
+
+  items HeldBillItem[]
+
+  // Sale created when this held bill is resumed
+  resumedSale Sale? @relation("HeldBillSourceSale")
+
+  heldAt    DateTime @default(now())
+  expiresAt DateTime
+
+  resumedAt    DateTime?
+  cancelledAt  DateTime?
+  cancelReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId])
+  @@index([terminalId])
+  @@index([shiftId])
+  @@index([cashierId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+model HeldBillItem {
+  id String @id @default(uuid())
+
+  heldBillId String
+  productId  String
+  unitId     String
+
+  // Snapshot
+  productName String
+  sku         String
+  barcode     String?
+
+  quantity Decimal @db.Decimal(18, 3)
+
+  unitCode   String
+  unitSymbol String
+  unitFactor Decimal @db.Decimal(18, 6)
+
+  heldBill HeldBill @relation(fields: [heldBillId], references: [id], onDelete: Cascade)
+
+  product Product @relation("HeldBillProduct", fields: [productId], references: [id], onDelete: Restrict)
+
+  unit Unit @relation("HeldBillUnit", fields: [unitId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([heldBillId])
+  @@index([productId])
+  @@index([unitId])
+}
+
+enum ReturnStatus {
+  PENDING
+  APPROVED
+  PROCESSING
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+enum RefundStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+model SaleReturn {
+  id           String       @id @default(uuid())
+  returnNumber String       @unique
+  status       ReturnStatus @default(PENDING)
+
+  saleId   String
+  branchId String
+
+  requestedById String
+  approvedById  String?
+  rejectedById  String?
+  cancelledById String?
+  completedById String?
+
+  note            String?
+  rejectionReason String?
+  cancelReason    String?
+
+  refundTotal Decimal @default(0) @db.Decimal(14, 2)
+
+  // Protect refund retries
+  refundIdempotencyKey String? @unique
+
+  requestedAt DateTime  @default(now())
+  approvedAt  DateTime?
+  rejectedAt  DateTime?
+  cancelledAt DateTime?
+  completedAt DateTime?
+
+  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  requestedBy User  @relation("ReturnRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  approvedBy  User? @relation("ReturnApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  rejectedBy  User? @relation("ReturnRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
+  cancelledBy User? @relation("ReturnCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  completedBy User? @relation("ReturnCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+
+  items   ReturnItem[]
+  refunds Refund[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([saleId])
+  @@index([branchId])
+  @@index([requestedById])
+  @@index([status])
+  @@index([requestedAt])
+}
+
+model ReturnItem {
+  id String @id @default(uuid())
+
+  saleReturnId String
+  saleItemId   String
+  productId    String
+
+  // Historical product snapshot
+  productName String
+  sku         String
+  barcode     String?
+
+  quantity     Decimal @db.Decimal(18, 3)
+  baseQuantity Decimal @db.Decimal(18, 3)
+
+  unitId     String
+  unitCode   String
+  unitSymbol String
+  unitFactor Decimal @db.Decimal(18, 6)
+
+  reason String?
+
+  // true -> product goes back into sellable stock
+  restock Boolean @default(true)
+
+  trackInventory Boolean @default(true)
+
+  refundSubtotal Decimal @db.Decimal(14, 2)
+  refundDiscount Decimal @default(0) @db.Decimal(14, 2)
+  refundTax      Decimal @default(0) @db.Decimal(14, 2)
+  refundTotal    Decimal @db.Decimal(14, 2)
+
+  saleReturn SaleReturn @relation(fields: [saleReturnId], references: [id], onDelete: Cascade)
+
+  saleItem SaleItem @relation(fields: [saleItemId], references: [id], onDelete: Restrict)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([saleReturnId])
+  @@index([saleItemId])
+  @@index([productId])
+}
+
+model Refund {
+  id String @id @default(uuid())
+
+  refundNumber String @unique
+
+  status RefundStatus  @default(COMPLETED)
+  method PaymentMethod
+
+  amount Decimal @db.Decimal(14, 2)
+
+  transactionReference String?
+  note                 String?
+
+  saleReturnId String
+  paymentId    String
+
+  shiftId       String
+  processedById String
+
+  // Only used when method = CASH
+  drawerId String?
+
+  saleReturn SaleReturn @relation(fields: [saleReturnId], references: [id], onDelete: Restrict)
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  shift CashierShift @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+
+  processedBy User @relation("RefundProcessedBy", fields: [processedById], references: [id], onDelete: Restrict)
+
+  drawer CashDrawer? @relation(fields: [drawerId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([saleReturnId])
+  @@index([paymentId])
+  @@index([shiftId])
+  @@index([processedById])
+  @@index([status])
+  @@index([method])
+  @@index([createdAt])
 }
