@@ -1,12 +1,12 @@
 import express from "express";
 
 import {
-  createSaleController,
-  getSalesController,
-  getSaleController,
-  getSaleNumberController,
-  cancelSaleController,
-} from "../controller/saleController.js";
+  getNotificationsController,
+  getUnreadCountController,
+  getNotificationController,
+  markNotificationReadController,
+  markAllNotificationsReadController,
+} from "../controller/notificationController.js";
 
 import {
   protect,
@@ -21,26 +21,13 @@ const router =
   express.Router();
 
 
-router.use(protect);
-
-
-// ======================================================
-// CREATE SALE
-// ======================================================
-
-router.post(
-  "/",
-
-  authorizeRoles(
-    "CASHIER"
-  ),
-
-  createSaleController
+router.use(
+  protect
 );
 
 
 // ======================================================
-// GET ALL SALES
+// ALL USERS CAN READ THEIR OWN NOTIFICATIONS
 // ======================================================
 
 router.get(
@@ -52,19 +39,18 @@ router.get(
     "CASHIER"
   ),
 
-  getSalesController
+  getNotificationsController
 );
 
 
 // ======================================================
-// GET BY SALE NUMBER
+// UNREAD COUNT
 //
-// IMPORTANT:
 // Keep before /:id
 // ======================================================
 
 router.get(
-  "/number/:saleNumber",
+  "/unread-count",
 
   authorizeRoles(
     "ADMIN",
@@ -72,16 +58,18 @@ router.get(
     "CASHIER"
   ),
 
-  getSaleNumberController
+  getUnreadCountController
 );
 
 
 // ======================================================
-// CANCEL
+// MARK ALL READ
+//
+// Keep before /:id
 // ======================================================
 
-router.post(
-  "/:id/cancel",
+router.patch(
+  "/read-all",
 
   authorizeRoles(
     "ADMIN",
@@ -89,12 +77,29 @@ router.post(
     "CASHIER"
   ),
 
-  cancelSaleController
+  markAllNotificationsReadController
 );
 
 
 // ======================================================
-// GET BY ID
+// MARK ONE READ
+// ======================================================
+
+router.patch(
+  "/:id/read",
+
+  authorizeRoles(
+    "ADMIN",
+    "MANAGER",
+    "CASHIER"
+  ),
+
+  markNotificationReadController
+);
+
+
+// ======================================================
+// GET ONE
 // ======================================================
 
 router.get(
@@ -106,7 +111,7 @@ router.get(
     "CASHIER"
   ),
 
-  getSaleController
+  getNotificationController
 );
 
 

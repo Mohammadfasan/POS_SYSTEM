@@ -21,10 +21,20 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 import receiptRoutes from "./routes/receiptRoutes.js";
 import heldBillRoutes from "./routes/heldBillRoutes.js";
 import returnRoutes from "./routes/returnRoutes.js";
+import voidRoutes from "./routes/voidRoutes.js";
+import promotionRoutes from "./routes/promotionRoutes.js";
+import discountRoutes from "./routes/discountRoutes.js";
+import reportRoutes from "./routes/reportRoutes.js";
+import auditRoutes from "./routes/auditRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
+
 import {
   errorHandler,
   notFoundHandler,
 } from "./middleware/authMiddleware/errorMiddleware.js";
+
+
+
 
 const app = express();
 
@@ -66,6 +76,14 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/receipts", receiptRoutes);
 app.use("/api/held-bills", heldBillRoutes);
 app.use("/api/returns", returnRoutes);
+app.use("/api/voids", voidRoutes);
+app.use("/api/promotions", promotionRoutes);
+app.use("/api/discounts", discountRoutes);
+app.use("/api/reports", reportRoutes);
+app.use("/api/audits", auditRoutes);
+app.use("/api/notifications", notificationRoutes);
+
+
 app.use(notFoundHandler);
 app.use(errorHandler);
 

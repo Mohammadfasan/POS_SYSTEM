@@ -1,12 +1,11 @@
 import express from "express";
 
 import {
-  createSaleController,
-  getSalesController,
-  getSaleController,
-  getSaleNumberController,
-  cancelSaleController,
-} from "../controller/saleController.js";
+  getAuditLogsController,
+  getAuditLogController,
+  getEntityAuditHistoryController,
+  getAuditSummaryController,
+} from "../controller/auditController.js";
 
 import {
   protect,
@@ -21,26 +20,13 @@ const router =
   express.Router();
 
 
-router.use(protect);
-
-
-// ======================================================
-// CREATE SALE
-// ======================================================
-
-router.post(
-  "/",
-
-  authorizeRoles(
-    "CASHIER"
-  ),
-
-  createSaleController
+router.use(
+  protect
 );
 
 
 // ======================================================
-// GET ALL SALES
+// GET ALL
 // ======================================================
 
 router.get(
@@ -48,53 +34,52 @@ router.get(
 
   authorizeRoles(
     "ADMIN",
-    "MANAGER",
-    "CASHIER"
+    "MANAGER"
   ),
 
-  getSalesController
+  getAuditLogsController
 );
 
 
 // ======================================================
-// GET BY SALE NUMBER
+// SUMMARY
 //
-// IMPORTANT:
 // Keep before /:id
 // ======================================================
 
 router.get(
-  "/number/:saleNumber",
+  "/summary",
 
   authorizeRoles(
     "ADMIN",
-    "MANAGER",
-    "CASHIER"
+    "MANAGER"
   ),
 
-  getSaleNumberController
+  getAuditSummaryController
 );
 
 
 // ======================================================
-// CANCEL
+// ENTITY HISTORY
+//
+// Example:
+// /entity/PRODUCT/uuid
 // ======================================================
 
-router.post(
-  "/:id/cancel",
+router.get(
+  "/entity/:entityType/:entityId",
 
   authorizeRoles(
     "ADMIN",
-    "MANAGER",
-    "CASHIER"
+    "MANAGER"
   ),
 
-  cancelSaleController
+  getEntityAuditHistoryController
 );
 
 
 // ======================================================
-// GET BY ID
+// GET ONE
 // ======================================================
 
 router.get(
@@ -102,11 +87,10 @@ router.get(
 
   authorizeRoles(
     "ADMIN",
-    "MANAGER",
-    "CASHIER"
+    "MANAGER"
   ),
 
-  getSaleController
+  getAuditLogController
 );
 
 

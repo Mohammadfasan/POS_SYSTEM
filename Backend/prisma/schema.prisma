@@ -34,14 +34,28 @@ model User {
   role         Role       @default(CASHIER)
   status       UserStatus @default(ACTIVE)
 
-  failedLoginAttempts Int       @default(0)
+  failedLoginAttempts Int        @default(0)
   lockedUntil         DateTime?
   lastLoginAt         DateTime?
+  auditLogs           AuditLog[] @relation("AuditActor")
 
   // Branch relation
-  branchId  String?
-  branch    Branch?    @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  branchId String?
+  branch   Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
   heldBills HeldBill[] @relation("HeldBillCashier")
+
+  voidsRequested VoidRequest[] @relation("VoidRequestedBy")
+
+  voidsApproved VoidRequest[] @relation("VoidApprovedBy")
+
+  voidsRejected VoidRequest[] @relation("VoidRejectedBy")
+
+  voidsCancelled VoidRequest[] @relation("VoidCancelledBy")
+
+  voidsCompleted VoidRequest[] @relation("VoidCompletedBy")
+
+  voidRefundsProcessed VoidRefund[] @relation("VoidRefundProcessedBy")
 
   refreshTokens RefreshToken[]
 
@@ -55,6 +69,18 @@ model User {
 
   returnsCompleted SaleReturn[] @relation("ReturnCompletedBy")
 
+  promotionsCreated Promotion[] @relation("PromotionCreatedBy")
+
+  manualDiscountsRequested ManualDiscount[] @relation("ManualDiscountRequestedBy")
+
+  manualDiscountsApplied ManualDiscount[] @relation("ManualDiscountAppliedBy")
+
+  manualDiscountsRejected ManualDiscount[] @relation("ManualDiscountRejectedBy")
+
+  manualDiscountsCancelled ManualDiscount[] @relation("ManualDiscountCancelledBy")
+
+  notificationsReceived         Notification[]          @relation("NotificationRecipient")
+  notificationsCreated          Notification[]          @relation("NotificationCreator")
   refundsProcessed              Refund[]                @relation("RefundProcessedBy")
   paymentsProcessed             Payment[]               @relation("PaymentCashier")
   salesAsCashier                Sale[]                  @relation("SaleCashier")
@@ -94,13 +120,19 @@ model Branch {
   city    String?
   status  BranchStatus @default(ACTIVE)
 
-  users       User[]
-  terminals   Terminal[]
-  inventories Inventory[]
-  shifts      CashierShift[]
-  sales       Sale[]
-  heldBills   HeldBill[]
-  saleReturns SaleReturn[]
+  users         User[]
+  terminals     Terminal[]
+  inventories   Inventory[]
+  shifts        CashierShift[]
+  sales         Sale[]
+  heldBills     HeldBill[]
+  saleReturns   SaleReturn[]
+  voidRequests  VoidRequest[]
+  promotions    Promotion[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+
+  manualDiscounts ManualDiscount[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -162,7 +194,8 @@ model Category {
   description String?
   status      CategoryStatus @default(ACTIVE)
 
-  products Product[]
+  products   Product[]
+  promotions Promotion[] @relation("PromotionCategory")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -232,6 +265,7 @@ model Product {
   trackInventory          Boolean @default(true)
 
   heldBillItems HeldBillItem[] @relation("HeldBillProduct")
+  promotions    Promotion[]    @relation("PromotionProduct")
 
   categoryId String
   category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
@@ -332,13 +366,14 @@ model CashierShift {
   id          String @id @default(uuid())
   shiftNumber String @unique
 
-  cashierId  String
-  branchId   String
-  terminalId String
-  sales      Sale[]
-  payments   Payment[]
-  heldBills  HeldBill[]
-  refunds    Refund[]
+  cashierId   String
+  branchId    String
+  terminalId  String
+  sales       Sale[]
+  payments    Payment[]
+  heldBills   HeldBill[]
+  refunds     Refund[]
+  voidRefunds VoidRefund[]
 
   status ShiftStatus @default(OPEN)
 
@@ -398,6 +433,7 @@ enum CashDrawerTransactionType {
   CASH_OUT
   SALE
   REFUND
+  VOID
 }
 
 model CashDrawer {
@@ -412,6 +448,7 @@ model CashDrawer {
   transactions CashDrawerTransaction[]
   payments     Payment[]
   refunds      Refund[]
+  voidRefunds  VoidRefund[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -487,9 +524,13 @@ model Sale {
   shift    CashierShift @relation(fields: [shiftId], references: [id], onDelete: Restrict)
   cashier  User         @relation("SaleCashier", fields: [cashierId], references: [id], onDelete: Restrict)
 
-  items    SaleItem[]
-  payments Payment[]
-  returns  SaleReturn[]
+  items             SaleItem[]
+  payments          Payment[]
+  returns           SaleReturn[]
+  voidRequests      VoidRequest[]
+  promotionsApplied SalePromotion[]
+
+  manualDiscounts ManualDiscount[]
 
   expiresAt    DateTime?
   completedAt  DateTime?
@@ -567,7 +608,8 @@ model Payment {
   paymentNumber  String @unique
   idempotencyKey String @unique
 
-  refunds Refund[]
+  refunds     Refund[]
+  voidRefunds VoidRefund[]
 
   method PaymentMethod
   status PaymentStatus @default(COMPLETED)
@@ -840,4 +882,352 @@ model Refund {
   @@index([status])
   @@index([method])
   @@index([createdAt])
+}
+
+enum VoidStatus {
+  PENDING
+  APPROVED
+  PROCESSING
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+model VoidRequest {
+  id         String @id @default(uuid())
+  voidNumber String @unique
+
+  status VoidStatus @default(PENDING)
+
+  saleId   String
+  branchId String
+
+  requestedById String
+  approvedById  String?
+  rejectedById  String?
+  cancelledById String?
+  completedById String?
+
+  reason          String
+  rejectionReason String?
+  cancelReason    String?
+
+  totalAmount Decimal @db.Decimal(14, 2)
+
+  executionIdempotencyKey String? @unique
+
+  requestedAt DateTime  @default(now())
+  approvedAt  DateTime?
+  rejectedAt  DateTime?
+  cancelledAt DateTime?
+  completedAt DateTime?
+
+  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  requestedBy User  @relation("VoidRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  approvedBy  User? @relation("VoidApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  rejectedBy  User? @relation("VoidRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
+  cancelledBy User? @relation("VoidCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  completedBy User? @relation("VoidCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+
+  refunds VoidRefund[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([saleId])
+  @@index([branchId])
+  @@index([requestedById])
+  @@index([status])
+  @@index([requestedAt])
+}
+
+model VoidRefund {
+  id String @id @default(uuid())
+
+  refundNumber String @unique
+
+  status RefundStatus  @default(COMPLETED)
+  method PaymentMethod
+
+  amount Decimal @db.Decimal(14, 2)
+
+  transactionReference String?
+  note                 String?
+
+  voidRequestId String
+  paymentId     String
+  shiftId       String
+  processedById String
+
+  drawerId String?
+
+  voidRequest VoidRequest  @relation(fields: [voidRequestId], references: [id], onDelete: Restrict)
+  payment     Payment      @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  shift       CashierShift @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  processedBy User         @relation("VoidRefundProcessedBy", fields: [processedById], references: [id], onDelete: Restrict)
+  drawer      CashDrawer?  @relation(fields: [drawerId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([voidRequestId])
+  @@index([paymentId])
+  @@index([shiftId])
+  @@index([processedById])
+  @@index([method])
+  @@index([createdAt])
+}
+
+enum PromotionDiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum PromotionScope {
+  CART
+  PRODUCT
+  CATEGORY
+}
+
+enum PromotionStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum DiscountRequestStatus {
+  PENDING
+  APPLIED
+  REJECTED
+  CANCELLED
+}
+
+model Promotion {
+  id String @id @default(uuid())
+
+  code        String  @unique
+  name        String
+  description String?
+
+  discountType PromotionDiscountType
+  scope        PromotionScope
+
+  value Decimal @db.Decimal(14, 2)
+
+  minPurchaseAmount Decimal  @default(0) @db.Decimal(14, 2)
+  maxDiscountAmount Decimal? @db.Decimal(14, 2)
+
+  autoApply Boolean @default(true)
+  priority  Int     @default(0)
+
+  startAt DateTime
+  endAt   DateTime
+
+  status PromotionStatus @default(ACTIVE)
+
+  branchId   String?
+  productId  String?
+  categoryId String?
+
+  createdById String
+
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  product Product? @relation("PromotionProduct", fields: [productId], references: [id], onDelete: Restrict)
+
+  category Category? @relation("PromotionCategory", fields: [categoryId], references: [id], onDelete: Restrict)
+
+  createdBy User @relation("PromotionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  applications SalePromotion[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId])
+  @@index([productId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([startAt])
+  @@index([endAt])
+}
+
+model SalePromotion {
+  id String @id @default(uuid())
+
+  saleId      String
+  promotionId String
+
+  promotionCode String
+  promotionName String
+
+  scope        PromotionScope
+  discountType PromotionDiscountType
+
+  discountValue  Decimal @db.Decimal(14, 2)
+  discountAmount Decimal @db.Decimal(14, 2)
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Restrict)
+
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@unique([saleId, promotionId])
+  @@index([saleId])
+  @@index([promotionId])
+}
+
+model ManualDiscount {
+  id String @id @default(uuid())
+
+  requestNumber String @unique
+
+  saleId   String
+  branchId String
+
+  discountType PromotionDiscountType
+  value        Decimal               @db.Decimal(14, 2)
+
+  appliedAmount Decimal @default(0) @db.Decimal(14, 2)
+
+  reason String
+  status DiscountRequestStatus @default(PENDING)
+
+  requestedById String
+  appliedById   String?
+  rejectedById  String?
+  cancelledById String?
+
+  requestedAt DateTime  @default(now())
+  appliedAt   DateTime?
+  rejectedAt  DateTime?
+  cancelledAt DateTime?
+
+  rejectionReason String?
+  cancelReason    String?
+
+  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  requestedBy User @relation("ManualDiscountRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+
+  appliedBy User? @relation("ManualDiscountAppliedBy", fields: [appliedById], references: [id], onDelete: SetNull)
+
+  rejectedBy User? @relation("ManualDiscountRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
+
+  cancelledBy User? @relation("ManualDiscountCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([saleId])
+  @@index([branchId])
+  @@index([status])
+  @@index([requestedById])
+}
+
+enum AuditSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model AuditLog {
+  id String @id @default(uuid())
+
+  // Request tracking
+  requestId String?
+
+  // Actor
+  actorId         String?
+  actorEmployeeId String?
+  actorName       String?
+  actorRole       String?
+
+  // Branch where action happened
+  branchId String?
+
+  // Event
+  module     String
+  action     String
+  entityType String
+  entityId   String?
+
+  severity AuditSeverity @default(INFO)
+
+  description String
+
+  // Change snapshots
+  beforeData Json?
+  afterData  Json?
+  metadata   Json?
+
+  // HTTP / Device information
+  ipAddress  String?
+  userAgent  String?
+  httpMethod String?
+  path       String?
+
+  actor  User?   @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@index([branchId, createdAt])
+  @@index([module, createdAt])
+  @@index([action, createdAt])
+  @@index([entityType, entityId])
+  @@index([requestId])
+  @@index([severity])
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+model Notification {
+  id String @id @default(uuid())
+
+  recipientUserId String
+  branchId        String?
+
+  type     String
+  priority NotificationPriority @default(NORMAL)
+
+  title   String
+  message String
+
+  entityType String?
+  entityId   String?
+
+  data Json?
+
+  isRead Boolean   @default(false)
+  readAt DateTime?
+
+  expiresAt DateTime?
+
+  dedupeKey String? @unique
+
+  createdById String?
+
+  recipient User @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+
+  createdBy User? @relation("NotificationCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([recipientUserId, isRead, createdAt])
+  @@index([branchId, createdAt])
+  @@index([type, createdAt])
+  @@index([priority, createdAt])
+  @@index([entityType, entityId])
 }
